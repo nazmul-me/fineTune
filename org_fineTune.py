@@ -15,7 +15,7 @@ from transformers import (
     logging,
     set_seed,
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 
 def get_args():
@@ -93,7 +93,7 @@ def main(args):
     print(f"Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
     print_trainable_parameters(model)
     
-    filePath = "/home/mhaque4/Documents/fineTune/data/code_segments_humaneval.json"
+    filePath = "/home/mhaque4/Documents/code_fineTune/fineTune/data/code_segments_humaneval.json"
 
     data = {}
     data["train"] = load_dataset(
@@ -108,16 +108,16 @@ def main(args):
         split=f"train[{-20}%:]",
         cache_dir=None
     )
-    print(args)
-
+    print(data)
     # setup the trainer
     trainer = SFTTrainer(
         model=model,
         # train_dataset=data,
         train_dataset=data["train"],
         eval_dataset=data["validation"],
-        max_seq_length=args.max_seq_length,
-        args=transformers.TrainingArguments(
+        args=SFTConfig(
+            dataset_text_field=args.dataset_text_field,
+            max_seq_length=args.max_seq_length,
             per_device_train_batch_size=args.micro_batch_size,
             gradient_accumulation_steps=args.gradient_accumulation_steps,
             warmup_steps=args.warmup_steps,
@@ -132,11 +132,12 @@ def main(args):
             run_name=f"train-{args.model_id.split('/')[-1]}",
             report_to="wandb",
         ),
-        dataset_text_field=args.dataset_text_field,
     )
     # launch
+    print(f"Before: Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
     print("Training...")
     trainer.train()
+    print(f"After: Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
 
     print("Saving the last checkpoint of the model")
     model.save_pretrained(os.path.join(args.output_dir, "final_checkpoint/"))
