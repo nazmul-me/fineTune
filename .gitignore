@@ -163,7 +163,7 @@ cython_debug/
 
 # fine tune model
 finetune_starcoder2/
-
+finetuneModels/
 #wandb
 wandb/
 

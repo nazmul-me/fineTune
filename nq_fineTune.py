@@ -15,7 +15,7 @@ from transformers import (
     logging,
     set_seed,
 )
-from trl import SFTTrainer, SFTConfig
+from trl import SFTTrainer
 
 
 def get_args():
@@ -83,17 +83,17 @@ def main(args):
     # load model and dataset
     token = os.environ.get("HF_TOKEN", None)
     model = AutoModelForCausalLM.from_pretrained(
-        args.model_id
+        args.model_id,
+        # quantization_config=bnb_config,
+        # device_map={"": PartialState().process_index},
+        # attention_dropout=args.attention_dropout,
     )
-    print(f"Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_id)
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        model.resize_token_embeddings(len(tokenizer))
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id
-    )
-    print(f"Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
-    print_trainable_parameters(model)
-    
-    filePath = "/home/mhaque4/Documents/code_fineTune/fineTune/data/code_segments_humaneval.json"
+    filePath = "./data/code_segments_humaneval.json"
 
     data = {}
     data["train"] = load_dataset(
@@ -108,16 +108,16 @@ def main(args):
         split=f"train[{-20}%:]",
         cache_dir=None
     )
-    print(data)
+
     # setup the trainer
     trainer = SFTTrainer(
         model=model,
+        tokenizer=tokenizer,
         # train_dataset=data,
         train_dataset=data["train"],
         eval_dataset=data["validation"],
-        args=SFTConfig(
-            dataset_text_field=args.dataset_text_field,
-            max_seq_length=args.max_seq_length,
+        # max_seq_length=args.max_seq_length,
+        args=transformers.TrainingArguments(
             per_device_train_batch_size=args.micro_batch_size,
             gradient_accumulation_steps=args.gradient_accumulation_steps,
             warmup_steps=args.warmup_steps,
@@ -125,19 +125,25 @@ def main(args):
             learning_rate=args.learning_rate,
             lr_scheduler_type=args.lr_scheduler_type,
             weight_decay=args.weight_decay,
+            # bf16=args.bf16,
             logging_strategy="steps",
             logging_steps=10,
             output_dir=args.output_dir,
+            # optim="paged_adamw_8bit",
             seed=args.seed,
             run_name=f"train-{args.model_id.split('/')[-1]}",
             report_to="wandb",
         ),
+        peft_config=lora_config,
+        dataset_text_field=args.dataset_text_field,
     )
-    # launch
+    # launch 
+    print_trainable_parameters(model)
     print(f"Before: Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
     print("Training...")
     trainer.train()
     print(f"After: Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
+    print_trainable_parameters(model)
 
     print("Saving the last checkpoint of the model")
     model.save_pretrained(os.path.join(args.output_dir, "final_checkpoint/"))
