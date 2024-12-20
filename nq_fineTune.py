@@ -41,6 +41,7 @@ def get_args():
     parser.add_argument("--output_dir", type=str, default="finetune_starcoder2")
     parser.add_argument("--num_proc", type=int, default=None)
     parser.add_argument("--push_to_hub", type=bool, default=True)
+    parser.add_argument("--per_device_train_batch_size", type=int, default=4)
     return parser.parse_args()
 
 
@@ -67,7 +68,7 @@ def main(args):
         bnb_4bit_compute_dtype=torch.bfloat16,
     )
     lora_config = LoraConfig(
-        r=8,
+        r=800,
         target_modules=[
             "q_proj",
             "o_proj",
@@ -76,8 +77,13 @@ def main(args):
             "gate_proj",
             "up_proj",
             "down_proj",
+            "embed_tokens",
+            "c_fc",
+            "c_proj",
+            "lm_head",
+            "out_proj", "fc_in", "fc_out", "wte"
         ],
-        task_type="CAUSAL_LM",
+        # task_type="CAUSAL_LM",
     )
 
     # load model and dataset
@@ -88,10 +94,12 @@ def main(args):
         # device_map={"": PartialState().process_index},
         # attention_dropout=args.attention_dropout,
     )
+    # model.gradient_checkpointing_enable()
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_id)
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-        model.resize_token_embeddings(len(tokenizer))
+    #     model.resize_token_embeddings(len(tokenizer))
 
     filePath = "./data/code_segments_humaneval.json"
 
@@ -138,9 +146,11 @@ def main(args):
         dataset_text_field=args.dataset_text_field,
     )
     # launch 
+    # print(model)
     print_trainable_parameters(model)
     print(f"Before: Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
     print("Training...")
+    # assert 0
     trainer.train()
     print(f"After: Memory footprint: {model.get_memory_footprint() / 1e6:.2f} MB")
     print_trainable_parameters(model)
